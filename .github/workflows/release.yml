@@ -1,0 +1,46 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.ref_type }}' -eq 'tag') {
+            '${{ github.ref_name }}'.TrimStart('v')
+          } else {
+            ([xml](Get-Content -Raw ./PostgresCommandExecuter.csproj)).Project.PropertyGroup.Version
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build and package
+        shell: pwsh
+        run: ./release.ps1 -Version '${{ steps.version.outputs.value }}'
+
+      - name: Upload versioned package
+        uses: actions/upload-artifact@v4
+        with:
+          name: PostgresCommandExecuter-v${{ steps.version.outputs.value }}-win-net48
+          path: |
+            artifacts/releases/*.zip
+            artifacts/releases/*.sha256
+          if-no-files-found: error

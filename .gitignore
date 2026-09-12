@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+packages/
+.packages/
+.dotnet-cli/
+.env
+.docker-cli/
+artifacts/
