@@ -1,0 +1,112 @@
+<Window x:Class="PostgresCommandExecuter.FavoriteEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Favorito SQL" Width="720" Height="650" MinWidth="620" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+        Icon="Assets/sql-executor-icon.png">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="0,0,0,14">
+            <TextBlock x:Name="DialogTitle" Text="Adicionar consulta favorita" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Text="As informações serão salvas somente no catálogo local deste usuário."
+                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="0,0,8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="220" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                    <TextBlock Text="Identificador *" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="IdTextBox" ToolTip="Identificador único, por exemplo: clientes_inativos" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,12">
+                    <TextBlock Text="Seção *" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <ComboBox x:Name="SectionComboBox" SelectedIndex="0">
+                        <ComboBoxItem Content="consultas" />
+                        <ComboBoxItem Content="operacoes" />
+                        <ComboBoxItem Content="prata" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,12">
+                    <TextBlock Text="Categoria *" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="CategoryTextBox" Text="geral" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,0,12">
+                    <TextBlock Text="Tipo" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <ComboBox x:Name="TypeComboBox" SelectedIndex="0">
+                        <ComboBoxItem Content="leitura" />
+                        <ComboBoxItem Content="escrita" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="2" Margin="0,0,0,12">
+                    <TextBlock Text="Risco" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <ComboBox x:Name="RiskComboBox" SelectedIndex="0">
+                        <ComboBoxItem Content="baixo" />
+                        <ComboBoxItem Content="medio" />
+                        <ComboBoxItem Content="alto" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                    <TextBlock Text="Finalidade *" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="PurposeTextBox" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                    <TextBlock Text="Parâmetros" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="ParametersTextBox" ToolTip="Separe por vírgula, por exemplo: {{endpoint_id}}, {{motivo}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                    <TextBlock Text="Observação" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="NoteTextBox" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                    <TextBlock Text="Função requerida" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,4" />
+                    <TextBox x:Name="RequiredFunctionTextBox" ToolTip="Campo opcional requer_funcao do catálogo" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,4">
+                    <TextBlock Text="SQL *" Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+                <TextBox Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="3" x:Name="SqlTextBox"
+                         AcceptsReturn="True" AcceptsTab="True" FontFamily="Consolas" FontSize="13"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         TextWrapping="NoWrap" />
+            </Grid>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,16,0,0">
+            <TextBlock x:Name="ValidationText" Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancelar" Click="Cancel_Click" MinWidth="92" />
+                <Button Content="Salvar favorito" Style="{StaticResource PrimaryButton}" Click="Save_Click" MinWidth="126" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

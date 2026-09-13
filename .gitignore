@@ -9,3 +9,7 @@ packages/
 .env
 .docker-cli/
 artifacts/
+favorites.yaml
+*.favorites.yaml
+catalogo_sql_operacao_nifi_postgresql.yaml
+dev-data/

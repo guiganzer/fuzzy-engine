@@ -1,16 +1,19 @@
 using Microsoft.Win32;
 using Newtonsoft.Json;
 using Npgsql;
+using PostgresCommandExecuter.Favorites;
 using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -28,6 +31,8 @@ namespace PostgresCommandExecuter
         private bool isDarkTheme = true;
         private bool resultsPanelExpanded;
         private bool panelTransitionInProgress;
+        private readonly FavoriteCatalogStore favoriteStore = new FavoriteCatalogStore();
+        private string currentFavoriteId;
         private GridLength savedQueryHeight = new GridLength(1, GridUnitType.Star);
         private GridLength savedResultsHeight = new GridLength(1.15, GridUnitType.Star);
 
@@ -47,6 +52,230 @@ namespace PostgresCommandExecuter
             };
 
             SetEditorText("SELECT version();\r\n\r\n-- Selecione um trecho ou pressione Ctrl+Enter para executar tudo.\r\nSELECT current_database(), current_user, now();");
+            RefreshFavoritesCount();
+        }
+
+        private void AddFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            string sql = GetSelectedSql();
+            if (string.IsNullOrWhiteSpace(sql))
+            {
+                StatusText.Text = "Selecione ou escreva uma consulta antes de favoritar.";
+                return;
+            }
+
+            Tuple<string, string> sqlKind = GuessSqlKind(sql);
+            var dialog = new FavoriteEditorWindow(new FavoriteQuery
+            {
+                Sql = sql.Trim(),
+                Section = sqlKind.Item1,
+                Type = sqlKind.Item2,
+                Risk = sqlKind.Item2 == "leitura" ? "baixo" : "medio",
+                Category = "geral"
+            }) { Owner = this };
+
+            if (dialog.ShowDialog() != true) return;
+            SaveFavoriteFromDialog(dialog);
+        }
+
+        private void ShowFavorites_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var favorites = favoriteStore.Load().Catalog.AllQueries()
+                    .OrderBy(x => x.Section).ThenBy(x => x.Category).ThenBy(x => x.Id).ToList();
+                var menu = new ContextMenu { PlacementTarget = FavoritesButton };
+
+                var importItem = new MenuItem { Header = "＋  Importar catálogo YAML..." };
+                importItem.Click += ImportFavorites_Click;
+                menu.Items.Add(importItem);
+                menu.Items.Add(new Separator());
+
+                if (favorites.Count == 0)
+                {
+                    menu.Items.Add(new MenuItem { Header = "   Nenhum favorito salvo", IsEnabled = false });
+                }
+                else
+                {
+                    foreach (var section in favorites.GroupBy(x => x.Section))
+                    {
+                        var sectionItem = new MenuItem { Header = SectionTitle(section.Key) };
+                        foreach (var category in section.GroupBy(x => x.Category))
+                        {
+                            var categoryItem = new MenuItem { Header = category.Key };
+                            foreach (var favorite in category)
+                            {
+                                var queryItem = new MenuItem
+                                {
+                                    Header = favorite.Id,
+                                    Tag = favorite,
+                                    ToolTip = favorite.Purpose
+                                };
+                                queryItem.Click += LoadFavorite_Click;
+                                categoryItem.Items.Add(queryItem);
+                            }
+                            sectionItem.Items.Add(categoryItem);
+                        }
+                        menu.Items.Add(sectionItem);
+                    }
+                }
+
+                menu.Items.Add(new Separator());
+                var editItem = new MenuItem { Header = "Editar favorito carregado...", IsEnabled = !string.IsNullOrEmpty(currentFavoriteId) };
+                editItem.Click += EditCurrentFavorite_Click;
+                menu.Items.Add(editItem);
+                var deleteItem = new MenuItem { Header = "Excluir favorito carregado...", IsEnabled = !string.IsNullOrEmpty(currentFavoriteId) };
+                deleteItem.Click += DeleteCurrentFavorite_Click;
+                menu.Items.Add(deleteItem);
+                menu.Items.Add(new Separator());
+                menu.Items.Add(new MenuItem { Header = "Catálogo local  •  " + favorites.Count + " item(ns)", IsEnabled = false });
+
+                FavoritesButton.ContextMenu = menu;
+                menu.IsOpen = true;
+            }
+            catch (Exception ex)
+            {
+                ShowFavoriteError(ex);
+            }
+        }
+
+        private void ImportFavorites_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Importar catálogo de consultas",
+                Filter = "Catálogo YAML (*.yaml;*.yml)|*.yaml;*.yml|Todos os arquivos (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (dialog.ShowDialog(this) != true) return;
+
+            var choice = MessageBox.Show(this,
+                "Como deseja importar o catálogo?\n\n" +
+                "SIM — Mesclar e atualizar favoritos com o mesmo id.\n" +
+                "NÃO — Substituir todo o catálogo local.\n" +
+                "CANCELAR — Não importar.\n\n" +
+                "Uma cópia de backup será mantida.",
+                "Importar catálogo YAML", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (choice == MessageBoxResult.Cancel) return;
+
+            try
+            {
+                bool replace = choice == MessageBoxResult.No;
+                CatalogImportResult result = favoriteStore.Import(dialog.FileName, replace);
+                currentFavoriteId = null;
+                RefreshFavoritesCount();
+                StatusText.Text = replace
+                    ? "Catálogo substituído: " + result.Total + " item(ns)."
+                    : "Importação concluída: " + result.Added + " novo(s), " + result.Updated + " atualizado(s).";
+            }
+            catch (Exception ex)
+            {
+                ShowFavoriteError(ex);
+            }
+        }
+
+        private void LoadFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            var item = sender as MenuItem;
+            var favorite = item == null ? null : item.Tag as FavoriteQuery;
+            if (favorite == null) return;
+            SetEditorText(favorite.Sql ?? "");
+            currentFavoriteId = favorite.Id;
+            StatusText.Text = "Favorito carregado: " + favorite.Id;
+            SqlEditor.Focus();
+        }
+
+        private void EditCurrentFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var favorite = favoriteStore.Load().Catalog.AllQueries()
+                    .FirstOrDefault(x => string.Equals(x.Id, currentFavoriteId, StringComparison.OrdinalIgnoreCase));
+                if (favorite == null)
+                {
+                    currentFavoriteId = null;
+                    RefreshFavoritesCount();
+                    StatusText.Text = "O favorito não existe mais.";
+                    return;
+                }
+
+                var dialog = new FavoriteEditorWindow(favorite.Clone()) { Owner = this };
+                if (dialog.ShowDialog() != true) return;
+                SaveFavoriteFromDialog(dialog);
+            }
+            catch (Exception ex)
+            {
+                ShowFavoriteError(ex);
+            }
+        }
+
+        private void DeleteCurrentFavorite_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(currentFavoriteId)) return;
+            if (MessageBox.Show(this, "Excluir o favorito '" + currentFavoriteId + "'?", "Excluir favorito",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            try
+            {
+                favoriteStore.Delete(currentFavoriteId);
+                StatusText.Text = "Favorito excluído: " + currentFavoriteId;
+                currentFavoriteId = null;
+                RefreshFavoritesCount();
+            }
+            catch (Exception ex)
+            {
+                ShowFavoriteError(ex);
+            }
+        }
+
+        private void SaveFavoriteFromDialog(FavoriteEditorWindow dialog)
+        {
+            try
+            {
+                favoriteStore.Upsert(dialog.Result, dialog.OriginalId);
+                currentFavoriteId = dialog.Result.Id;
+                RefreshFavoritesCount();
+                StatusText.Text = "Favorito salvo localmente: " + dialog.Result.Id;
+            }
+            catch (Exception ex)
+            {
+                ShowFavoriteError(ex);
+            }
+        }
+
+        private void RefreshFavoritesCount()
+        {
+            try
+            {
+                int count = favoriteStore.Load().Catalog.AllQueries().Count();
+                FavoritesButton.Content = "★ Favoritos (" + count + ") ▾";
+            }
+            catch (Exception ex)
+            {
+                FavoritesButton.Content = "★ Favoritos !";
+                MessagesTextBox.Text = "Não foi possível carregar favoritos: " + ex.Message;
+            }
+        }
+
+        private void ShowFavoriteError(Exception ex)
+        {
+            StatusText.Text = "Falha no catálogo de favoritos";
+            MessagesTextBox.Text = ex.Message + Environment.NewLine + Environment.NewLine + "Arquivo: " + favoriteStore.FilePath;
+            ResultTabs.SelectedIndex = 2;
+        }
+
+        private static Tuple<string, string> GuessSqlKind(string sql)
+        {
+            string normalized = (sql ?? "").TrimStart();
+            bool readOnly = Regex.IsMatch(normalized, "^(SELECT|WITH|SHOW|EXPLAIN|VALUES)\\b", RegexOptions.IgnoreCase);
+            return Tuple.Create(readOnly ? "consultas" : "operacoes", readOnly ? "leitura" : "escrita");
+        }
+
+        private static string SectionTitle(string section)
+        {
+            if (string.Equals(section, "operacoes", StringComparison.OrdinalIgnoreCase)) return "Operações";
+            if (string.Equals(section, "prata", StringComparison.OrdinalIgnoreCase)) return "Prata";
+            return "Consultas";
         }
 
         private string BuildConnectionString()

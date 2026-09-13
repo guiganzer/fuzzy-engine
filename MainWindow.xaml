@@ -81,6 +81,9 @@
                         <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="10,7">
                             <DockPanel>
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Content="☆ Favoritar" Click="AddFavorite_Click" ToolTip="Salvar seleção ou consulta atual" />
+                                    <Button x:Name="FavoritesButton" Content="★ Favoritos ▾" Click="ShowFavorites_Click"
+                                            ToolTip="Abrir catálogo pessoal de consultas" />
                                     <Button x:Name="ThemeButton" Content="☀ Tema claro" Click="ToggleTheme_Click" ToolTip="Alternar tema claro/escuro" />
                                     <Button x:Name="CancelButton" Content="Cancelar" Click="Cancel_Click" IsEnabled="False" />
                                     <Button x:Name="ExecuteButton" Content="▶ Executar" Style="{StaticResource PrimaryButton}" Click="Execute_Click" />

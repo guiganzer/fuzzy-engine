@@ -134,6 +134,29 @@ O build ocorre em uma pasta isolada, portanto pode ser executado mesmo com o apl
 
 O workflow `.github/workflows/release.yml` executa o mesmo pipeline manualmente ou ao enviar uma tag como `v0.2.0`, publicando ZIP e SHA-256 como artefatos da execução.
 
+## Favoritos SQL locais
+
+Selecione uma consulta (ou deixe sem seleção para usar todo o editor) e clique em **Favoritar**. O formulário segue a estrutura do catálogo YAML:
+
+```text
+catalogo_sql_operacao
+├── consultas
+├── operacoes
+└── prata
+```
+
+Cada registro possui `id`, `categoria`, `tipo`, `risco`, `finalidade`, `parametros`, `sql` e `observacao`. O botão **Favoritos** agrupa os registros por seção e categoria; um clique carrega o SQL no editor. O menu também permite editar ou excluir o favorito carregado.
+
+Cada usuário do Windows possui seu próprio arquivo:
+
+```text
+%LOCALAPPDATA%\PostgresCommandExecuter\favorites.yaml
+```
+
+Esse arquivo fica fora do repositório e não entra no ZIP da aplicação. Nomes comuns de catálogos pessoais também estão protegidos pelo `.gitignore` caso sejam copiados acidentalmente para a pasta do projeto. A gravação usa substituição atômica e mantém `favorites.yaml.bak` como backup da versão anterior.
+
+No menu **Favoritos**, use **Importar catálogo YAML...** para carregar um arquivo pronto. A opção **Mesclar** adiciona novos IDs e atualiza IDs existentes; **Substituir** troca todo o catálogo local. O arquivo é validado integralmente antes da gravação, e o original selecionado nunca é alterado.
+
 ## Alternativa com `dotnet` em Windows moderno
 
 O SDK atual não deve ser instalado no Windows Server 2012. Em uma máquina moderna com o .NET SDK e o Developer Pack 4.8 instalados:

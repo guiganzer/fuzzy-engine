@@ -34,6 +34,41 @@
                 <Setter Property="Padding" Value="9,6" />
                 <Setter Property="CaretBrush" Value="{DynamicResource TextPrimaryBrush}" />
             </Style>
+            <Style TargetType="ComboBox">
+                <Setter Property="Background" Value="{DynamicResource InputBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="Padding" Value="8,6" />
+            </Style>
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="Padding" Value="8,6" />
+            </Style>
+            <Style TargetType="ContextMenu">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="4" />
+                <Setter Property="MinWidth" Value="310" />
+                <Setter Property="MaxWidth" Value="620" />
+                <Setter Property="HasDropShadow" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                              CanContentScroll="True">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" />
+                                </ScrollViewer>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
             <Style TargetType="Button">
                 <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
@@ -94,6 +129,7 @@
                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                 <Setter Property="Padding" Value="9,5" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="MenuItem">
