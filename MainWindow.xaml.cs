@@ -13,6 +13,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,6 +66,7 @@ namespace PostgresCommandExecuter
 
             SetEditorText("SELECT version();\r\n\r\n-- Selecione um trecho ou pressione Ctrl+Enter para executar tudo.\r\nSELECT current_database(), current_user, now();");
             RefreshFavoritesCount();
+            RefreshResultActions();
         }
 
         private void AddFavorite_Click(object sender, RoutedEventArgs e)
@@ -382,6 +384,9 @@ namespace PostgresCommandExecuter
                 SetBusy(true, "Executando...");
                 ResultsGrid.ItemsSource = null;
                 SetJsonText(string.Empty);
+                ExportCsvButton.IsEnabled = false;
+                ExportJsonButton.IsEnabled = false;
+                GridCopyHint.Visibility = Visibility.Collapsed;
                 MessagesTextBox.Clear();
 
                 using (var connection = new NpgsqlConnection(BuildConnectionString()))
@@ -403,6 +408,8 @@ namespace PostgresCommandExecuter
                             string json = await Task.Run(() => SerializeTable(table), queryCancellation.Token);
                             ResultsGrid.ItemsSource = table.DefaultView;
                             SetJsonText(json);
+                            ExportCsvButton.IsEnabled = table.Columns.Count > 0;
+                            ExportJsonButton.IsEnabled = !string.IsNullOrWhiteSpace(json);
 
                             stopwatch.Stop();
                             string message = table.Columns.Count == 0
@@ -482,6 +489,188 @@ namespace PostgresCommandExecuter
                 return Convert.ToBase64String(bytes);
 
             return value;
+        }
+
+        private void ExportJson_Click(object sender, RoutedEventArgs e)
+        {
+            string json = JsonViewer.Text;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                StatusText.Text = "Não há resultado JSON para exportar.";
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Exportar resultado JSON",
+                Filter = "Arquivo JSON (*.json)|*.json|Todos os arquivos (*.*)|*.*",
+                DefaultExt = ".json",
+                AddExtension = true,
+                FileName = BuildExportFileName("resultado", "json")
+            };
+
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            try
+            {
+                File.WriteAllText(dialog.FileName, json, new UTF8Encoding(true));
+                StatusText.Text = "JSON exportado: " + dialog.FileName;
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private void ExportCsv_Click(object sender, RoutedEventArgs e)
+        {
+            DataTable table = GetResultsTable();
+            if (table == null || table.Columns.Count == 0)
+            {
+                StatusText.Text = "Não há resultado tabular para exportar.";
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Exportar resultado CSV",
+                Filter = "Arquivo CSV (*.csv)|*.csv|Todos os arquivos (*.*)|*.*",
+                DefaultExt = ".csv",
+                AddExtension = true,
+                FileName = BuildExportFileName("resultado", "csv")
+            };
+
+            if (dialog.ShowDialog(this) != true)
+                return;
+
+            try
+            {
+                using (var writer = new StreamWriter(dialog.FileName, false, new UTF8Encoding(true)))
+                {
+                    writer.WriteLine(string.Join(",", table.Columns.Cast<DataColumn>().Select(column => EscapeCsv(column.ColumnName))));
+                    foreach (DataRow row in table.Rows)
+                        writer.WriteLine(string.Join(",", table.Columns.Cast<DataColumn>().Select(column => EscapeCsv(GetEditableCellText(row[column])))));
+                }
+
+                StatusText.Text = string.Format(CultureInfo.CurrentCulture, "CSV exportado: {0:N0} linha(s) em {1}", table.Rows.Count, dialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                ShowError(ex);
+            }
+        }
+
+        private DataTable GetResultsTable()
+        {
+            var view = ResultsGrid.ItemsSource as DataView;
+            return view == null ? null : view.Table;
+        }
+
+        private static string BuildExportFileName(string prefix, string extension)
+        {
+            return prefix + "-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + "." + extension;
+        }
+
+        private static string EscapeCsv(string value)
+        {
+            string safe = value ?? string.Empty;
+            return "\"" + safe.Replace("\"", "\"\"") + "\"";
+        }
+
+        private void ResultsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            GridCopyHint.Visibility = ResultsGrid.SelectedItems.Count > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+
+        private void ResultsGrid_AutoGeneratingColumn(object sender, DataGridAutoGeneratingColumnEventArgs e)
+        {
+            e.Column.SortMemberPath = e.PropertyName;
+
+            var view = ResultsGrid.ItemsSource as DataView;
+            DataColumn column = view == null || !view.Table.Columns.Contains(e.PropertyName)
+                ? null
+                : view.Table.Columns[e.PropertyName];
+            string typeName = GetPostgreSqlTypeName(column == null ? e.PropertyType : column.DataType);
+
+            var header = new StackPanel { Orientation = Orientation.Vertical };
+            header.Children.Add(new TextBlock
+            {
+                Text = e.PropertyName,
+                FontWeight = FontWeights.Bold,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            var type = new TextBlock
+            {
+                Text = typeName,
+                FontWeight = FontWeights.Normal,
+                FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            type.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
+            header.Children.Add(type);
+            e.Column.Header = header;
+
+            var textColumn = e.Column as DataGridTextColumn;
+            if (textColumn != null)
+            {
+                var textStyle = new Style(typeof(TextBlock));
+                textStyle.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+                textStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(6, 0, 4, 0)));
+                textColumn.ElementStyle = textStyle;
+            }
+
+            var checkBoxColumn = e.Column as DataGridCheckBoxColumn;
+            if (checkBoxColumn != null)
+            {
+                var checkBoxStyle = new Style(typeof(CheckBox));
+                checkBoxStyle.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+                checkBoxStyle.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center));
+                checkBoxColumn.ElementStyle = checkBoxStyle;
+            }
+        }
+
+        private void ResultTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.Source != ResultTabs)
+                return;
+
+            RefreshResultActions();
+        }
+
+        private void RefreshResultActions()
+        {
+            if (ExportCsvButton == null || ExportJsonButton == null || ResultTabs == null)
+                return;
+
+            bool jsonSelected = ResultTabs.SelectedIndex == 1;
+            ExportCsvButton.Visibility = jsonSelected ? Visibility.Collapsed : Visibility.Visible;
+            ExportJsonButton.Visibility = jsonSelected ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static string GetPostgreSqlTypeName(Type type)
+        {
+            if (type == null || type == typeof(object)) return "desconhecido";
+            if (type == typeof(bool)) return "boolean";
+            if (type == typeof(byte)) return "smallint";
+            if (type == typeof(short)) return "smallint";
+            if (type == typeof(int)) return "integer";
+            if (type == typeof(long)) return "bigint";
+            if (type == typeof(decimal)) return "numeric";
+            if (type == typeof(float)) return "real";
+            if (type == typeof(double)) return "double precision";
+            if (type == typeof(string) || type == typeof(char)) return "text";
+            if (type == typeof(Guid)) return "uuid";
+            if (type == typeof(DateTime)) return "timestamp";
+            if (type == typeof(DateTimeOffset)) return "timestamp with time zone";
+            if (type == typeof(TimeSpan)) return "interval";
+            if (type == typeof(byte[])) return "bytea";
+            if (type == typeof(IPAddress)) return "inet";
+            if (type == typeof(PhysicalAddress)) return "macaddr";
+            return type.Name.ToLowerInvariant();
         }
 
         private void ResultsGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

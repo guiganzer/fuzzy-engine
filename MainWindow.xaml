@@ -109,31 +109,51 @@
                               Background="Transparent" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" />
 
                 <Grid x:Name="ResultPanel" Grid.Row="2">
-                    <TabControl x:Name="ResultTabs">
+                    <TabControl x:Name="ResultTabs" SelectionChanged="ResultTabs_SelectionChanged">
                         <TabItem Header="Resultado">
-                            <DataGrid x:Name="ResultsGrid" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"
-                                      EnableRowVirtualization="True" EnableColumnVirtualization="True"
-                                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                                      ScrollViewer.IsDeferredScrollingEnabled="True" ScrollViewer.CanContentScroll="True"
-                                      GridLinesVisibility="Horizontal" BorderThickness="0"
-                                      HeadersVisibility="All" ClipboardCopyMode="IncludeHeader"
-                                      PreviewMouseLeftButtonDown="ResultsGrid_PreviewMouseLeftButtonDown"
-                                      PreviewMouseWheel="ResultsGrid_PreviewMouseWheel" />
+                            <Grid>
+                                <DataGrid x:Name="ResultsGrid" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"
+                                          EnableRowVirtualization="True" EnableColumnVirtualization="True"
+                                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                          ScrollViewer.IsDeferredScrollingEnabled="True" ScrollViewer.CanContentScroll="True"
+                                          GridLinesVisibility="None" BorderThickness="0" SnapsToDevicePixels="True"
+                                          HeadersVisibility="All" ClipboardCopyMode="IncludeHeader"
+                                          SelectionMode="Extended" SelectionUnit="FullRow"
+                                          AutoGeneratingColumn="ResultsGrid_AutoGeneratingColumn"
+                                          PreviewMouseLeftButtonDown="ResultsGrid_PreviewMouseLeftButtonDown"
+                                          PreviewMouseWheel="ResultsGrid_PreviewMouseWheel"
+                                          SelectionChanged="ResultsGrid_SelectionChanged" />
+                                <Border x:Name="GridCopyHint" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                        Margin="8" Padding="8,4" Background="{DynamicResource SurfaceRaisedBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="2"
+                                        Visibility="Collapsed" Panel.ZIndex="5" IsHitTestVisible="False">
+                                    <TextBlock Text="Ctrl+C copia a seleção com cabeçalhos" FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </Border>
+                            </Grid>
                         </TabItem>
                         <TabItem Header="JSON">
-                            <avalon:TextEditor x:Name="JsonViewer" IsReadOnly="True" Background="{DynamicResource InputBrush}"
-                                               Foreground="{DynamicResource TextPrimaryBrush}" BorderThickness="0"
-                                               FontFamily="Consolas" FontSize="13" ShowLineNumbers="True" WordWrap="False"
-                                               VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            <Grid>
+                                <avalon:TextEditor x:Name="JsonViewer" IsReadOnly="True" Background="{DynamicResource InputBrush}"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" BorderThickness="0"
+                                                   FontFamily="Consolas" FontSize="13" ShowLineNumbers="True" WordWrap="False"
+                                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" />
+                            </Grid>
                         </TabItem>
                         <TabItem Header="Mensagens">
                             <TextBox x:Name="MessagesTextBox" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas"
                                      Padding="14" BorderThickness="0" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" />
                         </TabItem>
                     </TabControl>
-                    <Button x:Name="ExpandResultsButton" Content="↗ Expandir" Click="ToggleResultsPanel_Click"
-                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,6,0" Padding="10,5"
-                            Panel.ZIndex="10" ToolTip="Expandir resultados (Ctrl+Shift+Espaço)" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,6,0"
+                                Panel.ZIndex="10">
+                        <Button x:Name="ExportCsvButton" Content="⇩ Exportar CSV" Click="ExportCsv_Click" Padding="10,5"
+                                IsEnabled="False" ToolTip="Salvar todas as linhas do resultado em um arquivo CSV" />
+                        <Button x:Name="ExportJsonButton" Content="⇩ Exportar JSON" Click="ExportJson_Click" Padding="10,5"
+                                IsEnabled="False" Visibility="Collapsed" ToolTip="Salvar o resultado JSON em um arquivo" />
+                        <Button x:Name="ExpandResultsButton" Content="↗ Expandir" Click="ToggleResultsPanel_Click"
+                                Padding="10,5" ToolTip="Expandir resultados (Ctrl+Shift+Espaço)" />
+                    </StackPanel>
                 </Grid>
 
                 <Border Grid.Row="3" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="4,8,4,0">
