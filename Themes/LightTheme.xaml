@@ -21,6 +21,13 @@
     <SolidColorBrush x:Key="SqlStringBrush" Color="#C2410C" />
     <SolidColorBrush x:Key="SqlNumberBrush" Color="#6D28D9" />
     <SolidColorBrush x:Key="SqlCommentBrush" Color="#15803D" />
+    <SolidColorBrush x:Key="SqlTypeBrush" Color="#6D28D9" />
+    <SolidColorBrush x:Key="SqlFunctionBrush" Color="#BE185D" />
+    <SolidColorBrush x:Key="SqlParameterBrush" Color="#A16207" />
+    <SolidColorBrush x:Key="JsonPropertyBrush" Color="#0369A1" />
+    <SolidColorBrush x:Key="JsonLiteralBrush" Color="#A16207" />
+    <SolidColorBrush x:Key="JsonPunctuationBrush" Color="#526174" />
+    <SolidColorBrush x:Key="SyntaxInvalidBrush" Color="#BE123C" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FFFFFF" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#172033" />
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E2E8F0" />

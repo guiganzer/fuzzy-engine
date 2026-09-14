@@ -54,6 +54,61 @@ Senha:    local_dev_password
 
 O banco isolado para testes é `postgres_executor_test`, com o mesmo usuário e senha.
 
+### Banco fake para demonstrar todos os tipos principais
+
+O teste de integração abaixo inicia/aguarda o Docker, recria uma única tabela de
+demonstração e valida tanto o banco de desenvolvimento quanto a carga fake. Ele
+é idempotente: pode ser executado mesmo se o volume Docker já existia antes.
+
+```powershell
+.\test-fake-database.ps1
+```
+
+Arquivos SQL separados:
+
+- `docker\init\02-create-fake-types-table.sql`: cria `public.postgresql_type_showcase`;
+- `docker\init\03-seed-fake-types-data.sql`: carrega registros com valores variados;
+- `docker\demo\select-showcase.sql`: consultas prontas para o painel.
+
+A tabela cobre números, texto, binário, data/hora, rede, geometria, busca textual,
+JSON/JSONB longo, XML, arrays, ranges e multiranges. Para visualizá-la no painel,
+use:
+
+```text
+Servidor: 127.0.0.1
+Porta:    55432
+Banco:    postgres_executor_test
+Usuário:  executor_dev
+Senha:    local_dev_password
+```
+
+Consulta compatível com o driver do aplicativo (os multiranges são exibidos como texto):
+
+```sql
+-- Arquivo completo: docker\demo\select-showcase.sql
+SELECT
+    sample_id,
+    short_name,
+    large_payload_jsonb,
+    network_address::text AS network_address,
+    network_block::text AS network_block,
+    integer_windows::text AS integer_windows,
+    amount_windows::text AS amount_windows,
+    date_windows::text AS date_windows,
+    timestamp_windows::text AS timestamp_windows,
+    observed_windows::text AS observed_windows
+FROM public.postgresql_type_showcase
+ORDER BY sample_id;
+```
+
+Para parar o container ao terminar o teste, sem apagar os dados:
+
+```powershell
+.\database-down.ps1
+```
+
+Para apagar o volume e recriar tudo do zero, execute `.\database-reset.ps1 -Confirm`.
+
 Ver logs ou abrir o `psql` dentro do container:
 
 ```powershell

@@ -1,0 +1,71 @@
+-- Consulta compatível com o Npgsql 4.1 usado pelo aplicativo em .NET Framework
+-- 4.8. PostgreSQL 18 possui multiranges cujo OID esse driver legado não conhece;
+-- os cinco campos são convertidos para texto, sem perder o valor apresentado.
+SELECT
+    sample_id,
+    external_id,
+    is_active,
+    priority_smallint,
+    quantity_integer,
+    total_bigint,
+    amount_numeric,
+    price_decimal,
+    legacy_money,
+    ratio_real,
+    score_double,
+    fixed_code,
+    short_name,
+    description_text,
+    binary_payload,
+    created_on,
+    local_time,
+    offset_time,
+    created_at,
+    observed_at,
+    retention_period,
+    network_address::text AS network_address,
+    network_block::text AS network_block,
+    device_mac,
+    device_mac_extended,
+    feature_mask,
+    variable_mask,
+    location_point,
+    route_line,
+    route_segment,
+    area_box,
+    travel_path,
+    coverage_polygon,
+    coverage_circle,
+    search_vector,
+    search_query,
+    event_data_json,
+    profile_jsonb,
+    large_payload_jsonb,
+    document_xml,
+    integer_values,
+    tag_values,
+    uuid_values,
+    jsonb_values,
+    active_window,
+    amount_window,
+    date_window,
+    timestamp_window,
+    observed_window,
+    integer_windows::text AS integer_windows,
+    amount_windows::text AS amount_windows,
+    date_windows::text AS date_windows,
+    timestamp_windows::text AS timestamp_windows,
+    observed_windows::text AS observed_windows,
+    optional_note
+FROM public.postgresql_type_showcase
+ORDER BY sample_id;
+
+-- Uma consulta mais leve para focar no JSON longo e seus campos internos.
+SELECT
+    sample_id,
+    short_name,
+    large_payload_jsonb,
+    large_payload_jsonb #>> '{payload,metadata,origin}' AS json_origin,
+    jsonb_array_length(large_payload_jsonb #> '{payload,items}') AS item_count
+FROM public.postgresql_type_showcase
+ORDER BY sample_id;

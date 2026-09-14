@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using Newtonsoft.Json;
 using Npgsql;
+using PostgresCommandExecuter.Editors;
 using PostgresCommandExecuter.Favorites;
 using System;
 using System.Collections.Generic;
@@ -9,12 +10,13 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -27,7 +29,6 @@ namespace PostgresCommandExecuter
         private readonly DispatcherTimer highlightTimer;
         private CancellationTokenSource queryCancellation;
         private NpgsqlCommand activeCommand;
-        private bool applyingHighlight;
         private bool isDarkTheme = true;
         private bool resultsPanelExpanded;
         private bool panelTransitionInProgress;
@@ -35,20 +36,25 @@ namespace PostgresCommandExecuter
         private string currentFavoriteId;
         private GridLength savedQueryHeight = new GridLength(1, GridUnitType.Star);
         private GridLength savedResultsHeight = new GridLength(1.15, GridUnitType.Star);
-
-        private static readonly Regex SqlTokenRegex = new Regex(
-            @"(?<comment>--[^\r\n]*|/\*[\s\S]*?\*/)|(?<string>'(?:''|[^'])*')|(?<number>\b\d+(?:\.\d+)?\b)|(?<keyword>\b(?:SELECT|FROM|WHERE|INSERT|INTO|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|VIEW|INDEX|JOIN|LEFT|RIGHT|FULL|INNER|OUTER|ON|AS|AND|OR|NOT|NULL|IS|IN|EXISTS|BETWEEN|LIKE|ILIKE|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|VALUES|SET|RETURNING|WITH|RECURSIVE|UNION|ALL|DISTINCT|CASE|WHEN|THEN|ELSE|END|ASC|DESC|TRUE|FALSE|BEGIN|COMMIT|ROLLBACK|EXPLAIN|ANALYZE|GRANT|REVOKE|PRIMARY|KEY|FOREIGN|REFERENCES|CONSTRAINT|DEFAULT)\b)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private readonly TokenColorizer sqlColorizer;
+        private readonly TokenColorizer jsonColorizer;
+        private const int MaximumLiveAnalysisLength = 350000;
 
         public MainWindow()
         {
             InitializeComponent();
 
+            sqlColorizer = new TokenColorizer(ResolveSyntaxBrush);
+            jsonColorizer = new TokenColorizer(ResolveSyntaxBrush);
+            SqlEditor.TextArea.TextView.LineTransformers.Add(sqlColorizer);
+            JsonViewer.TextArea.TextView.LineTransformers.Add(jsonColorizer);
+            ConfigureSyntaxEditors();
+
             highlightTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
             highlightTimer.Tick += delegate
             {
                 highlightTimer.Stop();
-                ApplySqlHighlighting();
+                RefreshSqlAnalysis();
             };
 
             SetEditorText("SELECT version();\r\n\r\n-- Selecione um trecho ou pressione Ctrl+Enter para executar tudo.\r\nSELECT current_database(), current_user, now();");
@@ -331,6 +337,27 @@ namespace PostgresCommandExecuter
             await ExecuteSqlAsync();
         }
 
+        private void FormatSql_Click(object sender, RoutedEventArgs e)
+        {
+            string selection = SqlEditor.SelectedText;
+            bool hasSelection = !string.IsNullOrEmpty(selection);
+            string source = hasSelection ? selection : SqlEditor.Text;
+            SqlFormatResult result = SqlDocumentFormatter.TryFormat(source);
+            if (!result.Success)
+            {
+                StatusText.Text = result.Message;
+                return;
+            }
+
+            if (hasSelection)
+                SqlEditor.SelectedText = result.Text;
+            else
+                SqlEditor.Text = result.Text;
+
+            RefreshSqlAnalysis();
+            StatusText.Text = result.Message;
+        }
+
         private async Task ExecuteSqlAsync()
         {
             if (queryCancellation != null)
@@ -349,7 +376,7 @@ namespace PostgresCommandExecuter
             {
                 SetBusy(true, "Executando...");
                 ResultsGrid.ItemsSource = null;
-                JsonTextBox.Clear();
+                SetJsonText(string.Empty);
                 MessagesTextBox.Clear();
 
                 using (var connection = new NpgsqlConnection(BuildConnectionString()))
@@ -371,7 +398,7 @@ namespace PostgresCommandExecuter
                             }, queryCancellation.Token);
                             string json = await Task.Run(() => SerializeTable(table), queryCancellation.Token);
                             ResultsGrid.ItemsSource = table.DefaultView;
-                            JsonTextBox.Text = json;
+                            SetJsonText(json);
 
                             stopwatch.Stop();
                             string message = table.Columns.Count == 0
@@ -423,11 +450,34 @@ namespace PostgresCommandExecuter
                 foreach (DataColumn column in table.Columns)
                 {
                     object value = row[column];
-                    item[column.ColumnName] = value == DBNull.Value ? null : value;
+                    item[column.ColumnName] = PrepareValueForJson(value);
                 }
                 rows.Add(item);
             }
             return JsonConvert.SerializeObject(rows, Formatting.Indented);
+        }
+
+        private static object PrepareValueForJson(object value)
+        {
+            if (value == null || value == DBNull.Value)
+                return null;
+
+            // Npgsql 4.1 entrega inet/cidr como IPAddress. O Json.NET tenta
+            // refletir ScopeId, que lança para alguns endereços IPv6. Para a
+            // aba JSON, a representação textual é a forma estável e legível.
+            var address = value as IPAddress;
+            if (address != null)
+                return address.ToString();
+
+            var physicalAddress = value as PhysicalAddress;
+            if (physicalAddress != null)
+                return physicalAddress.ToString();
+
+            var bytes = value as byte[];
+            if (bytes != null)
+                return Convert.ToBase64String(bytes);
+
+            return value;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -467,79 +517,169 @@ namespace PostgresCommandExecuter
 
         private string GetSelectedSql()
         {
-            string selected = SqlEditor.Selection.Text;
+            string selected = SqlEditor.SelectedText;
             if (!string.IsNullOrWhiteSpace(selected))
                 return selected;
-            return new TextRange(SqlEditor.Document.ContentStart, SqlEditor.Document.ContentEnd).Text;
+            return SqlEditor.Text;
         }
 
-        private void SqlEditor_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        private void SqlEditor_TextChanged(object sender, EventArgs e)
         {
-            if (applyingHighlight || highlightTimer == null)
+            if (highlightTimer == null)
                 return;
             highlightTimer.Stop();
             highlightTimer.Start();
         }
 
-        private void ApplySqlHighlighting()
+        private void RefreshSqlAnalysis()
         {
-            if (applyingHighlight)
+            string text = SqlEditor.Text ?? string.Empty;
+            if (text.Length > MaximumLiveAnalysisLength)
+            {
+                sqlColorizer.SetSpans(new List<TokenStyleSpan>());
+                SqlEditor.TextArea.TextView.Redraw();
+                SqlAnalysisText.Text = "  •  análise pausada (arquivo muito grande)";
                 return;
-
-            applyingHighlight = true;
-            try
-            {
-                var documentRange = new TextRange(SqlEditor.Document.ContentStart, SqlEditor.Document.ContentEnd);
-                string text = documentRange.Text;
-                documentRange.ApplyPropertyValue(TextElement.ForegroundProperty, (Brush)FindResource("TextPrimaryBrush"));
-                documentRange.ApplyPropertyValue(TextElement.FontWeightProperty, FontWeights.Normal);
-
-                foreach (Match match in SqlTokenRegex.Matches(text))
-                {
-                    TextPointer start = GetTextPositionAtOffset(SqlEditor.Document.ContentStart, match.Index);
-                    TextPointer end = GetTextPositionAtOffset(SqlEditor.Document.ContentStart, match.Index + match.Length);
-                    if (start == null || end == null)
-                        continue;
-
-                    string brushKey = match.Groups["comment"].Success ? "SqlCommentBrush"
-                        : match.Groups["string"].Success ? "SqlStringBrush"
-                        : match.Groups["number"].Success ? "SqlNumberBrush"
-                        : "SqlKeywordBrush";
-                    var range = new TextRange(start, end);
-                    range.ApplyPropertyValue(TextElement.ForegroundProperty, (Brush)FindResource(brushKey));
-                    if (match.Groups["keyword"].Success)
-                        range.ApplyPropertyValue(TextElement.FontWeightProperty, FontWeights.SemiBold);
-                }
             }
-            finally
+
+            SqlLexResult result = SqlLexer.Tokenize(text);
+            sqlColorizer.SetSpans(ToSqlStyleSpans(result.Tokens));
+            SqlEditor.TextArea.TextView.Redraw();
+
+            if (result.Diagnostics.Count == 0)
             {
-                applyingHighlight = false;
+                SqlAnalysisText.Text = "  •  PostgreSQL reconhecido";
+            }
+            else
+            {
+                SqlAnalysisText.Text = "  •  " + result.Diagnostics[0].Message;
             }
         }
 
-        private static TextPointer GetTextPositionAtOffset(TextPointer start, int offset)
+        private void ConfigureSyntaxEditors()
         {
-            TextPointer pointer = start;
-            int count = 0;
-            while (pointer != null)
+            SqlEditor.Options.ConvertTabsToSpaces = true;
+            SqlEditor.Options.IndentationSize = 4;
+            SqlEditor.Options.EnableHyperlinks = false;
+            SqlEditor.Options.EnableEmailHyperlinks = false;
+            JsonViewer.Options.EnableHyperlinks = false;
+            JsonViewer.Options.EnableEmailHyperlinks = false;
+            ApplySyntaxTheme();
+        }
+
+        private void ApplySyntaxTheme()
+        {
+            Brush primary = FindResource("TextPrimaryBrush") as Brush;
+            Brush secondary = FindResource("TextSecondaryBrush") as Brush;
+            Brush selection = FindResource("SelectionBrush") as Brush;
+
+            SqlEditor.TextArea.SelectionBrush = selection;
+            SqlEditor.TextArea.SelectionForeground = primary;
+            SqlEditor.TextArea.Caret.CaretBrush = primary;
+            SqlEditor.LineNumbersForeground = secondary;
+            JsonViewer.TextArea.SelectionBrush = selection;
+            JsonViewer.TextArea.SelectionForeground = primary;
+            JsonViewer.LineNumbersForeground = secondary;
+        }
+
+        private Brush ResolveSyntaxBrush(TokenStyleKind kind)
+        {
+            string key;
+            switch (kind)
             {
-                if (pointer.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
-                {
-                    int runLength = pointer.GetTextRunLength(LogicalDirection.Forward);
-                    if (count + runLength >= offset)
-                        return pointer.GetPositionAtOffset(offset - count);
-                    count += runLength;
-                }
-                pointer = pointer.GetNextContextPosition(LogicalDirection.Forward);
+                case TokenStyleKind.Keyword: key = "SqlKeywordBrush"; break;
+                case TokenStyleKind.Type: key = "SqlTypeBrush"; break;
+                case TokenStyleKind.Function: key = "SqlFunctionBrush"; break;
+                case TokenStyleKind.String: key = "SqlStringBrush"; break;
+                case TokenStyleKind.Number: key = "SqlNumberBrush"; break;
+                case TokenStyleKind.Comment: key = "SqlCommentBrush"; break;
+                case TokenStyleKind.Parameter: key = "SqlParameterBrush"; break;
+                case TokenStyleKind.PropertyName: key = "JsonPropertyBrush"; break;
+                case TokenStyleKind.Literal: key = "JsonLiteralBrush"; break;
+                case TokenStyleKind.Punctuation: key = "JsonPunctuationBrush"; break;
+                case TokenStyleKind.Invalid: key = "SyntaxInvalidBrush"; break;
+                default: return null;
             }
-            return start.DocumentEnd;
+
+            return FindResource(key) as Brush;
+        }
+
+        private static IList<TokenStyleSpan> ToSqlStyleSpans(IList<SqlToken> tokens)
+        {
+            var spans = new List<TokenStyleSpan>();
+            foreach (SqlToken token in tokens)
+            {
+                TokenStyleKind style;
+                bool emphasized = false;
+                switch (token.Kind)
+                {
+                    case SqlTokenKind.Keyword: style = TokenStyleKind.Keyword; emphasized = true; break;
+                    case SqlTokenKind.DataType: style = TokenStyleKind.Type; break;
+                    case SqlTokenKind.Function: style = TokenStyleKind.Function; break;
+                    case SqlTokenKind.String:
+                    case SqlTokenKind.QuotedIdentifier: style = TokenStyleKind.String; break;
+                    case SqlTokenKind.Number: style = TokenStyleKind.Number; break;
+                    case SqlTokenKind.Comment: style = TokenStyleKind.Comment; break;
+                    case SqlTokenKind.Parameter: style = TokenStyleKind.Parameter; break;
+                    default: continue;
+                }
+
+                spans.Add(new TokenStyleSpan(token.Offset, token.Length, style, emphasized));
+            }
+
+            return spans;
+        }
+
+        private static IList<TokenStyleSpan> ToJsonStyleSpans(IList<JsonSyntaxToken> tokens)
+        {
+            var spans = new List<TokenStyleSpan>();
+            foreach (JsonSyntaxToken token in tokens)
+            {
+                TokenStyleKind style;
+                switch (token.Kind)
+                {
+                    case JsonSyntaxTokenKind.PropertyName: style = TokenStyleKind.PropertyName; break;
+                    case JsonSyntaxTokenKind.String: style = TokenStyleKind.String; break;
+                    case JsonSyntaxTokenKind.Number: style = TokenStyleKind.Number; break;
+                    case JsonSyntaxTokenKind.Boolean:
+                    case JsonSyntaxTokenKind.Null: style = TokenStyleKind.Literal; break;
+                    case JsonSyntaxTokenKind.Punctuation: style = TokenStyleKind.Punctuation; break;
+                    case JsonSyntaxTokenKind.Invalid: style = TokenStyleKind.Invalid; break;
+                    default: continue;
+                }
+
+                spans.Add(new TokenStyleSpan(token.Start, token.Length, style, false));
+            }
+
+            return spans;
+        }
+
+        private void SetJsonText(string text)
+        {
+            JsonFormatResult formatted = JsonDocumentProcessor.TryFormat(text);
+            JsonViewer.Text = formatted.Success ? formatted.FormattedText : (text ?? string.Empty);
+            RefreshJsonAnalysis();
+        }
+
+        private void RefreshJsonAnalysis()
+        {
+            string text = JsonViewer.Text ?? string.Empty;
+            if (text.Length > MaximumLiveAnalysisLength)
+            {
+                jsonColorizer.SetSpans(new List<TokenStyleSpan>());
+                JsonViewer.TextArea.TextView.Redraw();
+                return;
+            }
+
+            jsonColorizer.SetSpans(ToJsonStyleSpans(JsonDocumentProcessor.Tokenize(text)));
+            JsonViewer.TextArea.TextView.Redraw();
         }
 
         private void SetEditorText(string text)
         {
-            SqlEditor.Document.Blocks.Clear();
-            SqlEditor.Document.Blocks.Add(new Paragraph(new Run(text)) { Margin = new Thickness(0) });
-            ApplySqlHighlighting();
+            SqlEditor.Text = text ?? string.Empty;
+            SqlEditor.CaretOffset = 0;
+            RefreshSqlAnalysis();
         }
 
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -553,6 +693,11 @@ namespace PostgresCommandExecuter
             {
                 e.Handled = true;
                 SetResultsPanelExpanded(!resultsPanelExpanded);
+            }
+            else if (e.Key == Key.F && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            {
+                e.Handled = true;
+                FormatSql_Click(this, new RoutedEventArgs());
             }
             else if (e.Key == Key.Escape && resultsPanelExpanded)
             {
@@ -639,7 +784,7 @@ namespace PostgresCommandExecuter
         {
             var dialog = new SaveFileDialog { Filter = "Arquivos SQL (*.sql)|*.sql|Todos os arquivos (*.*)|*.*", DefaultExt = ".sql" };
             if (dialog.ShowDialog(this) == true)
-                File.WriteAllText(dialog.FileName, new TextRange(SqlEditor.Document.ContentStart, SqlEditor.Document.ContentEnd).Text);
+                File.WriteAllText(dialog.FileName, SqlEditor.Text);
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)
@@ -677,7 +822,9 @@ namespace PostgresCommandExecuter
 
             isDarkTheme = dark;
             ThemeButton.Content = dark ? "☀ Tema claro" : "☾ Tema escuro";
-            ApplySqlHighlighting();
+            ApplySyntaxTheme();
+            RefreshSqlAnalysis();
+            RefreshJsonAnalysis();
         }
     }
 }

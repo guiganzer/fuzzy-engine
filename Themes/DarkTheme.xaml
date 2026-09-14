@@ -22,6 +22,13 @@
     <SolidColorBrush x:Key="SqlStringBrush" Color="#FDBA74" />
     <SolidColorBrush x:Key="SqlNumberBrush" Color="#C4B5FD" />
     <SolidColorBrush x:Key="SqlCommentBrush" Color="#86EFAC" />
+    <SolidColorBrush x:Key="SqlTypeBrush" Color="#C4B5FD" />
+    <SolidColorBrush x:Key="SqlFunctionBrush" Color="#F9A8D4" />
+    <SolidColorBrush x:Key="SqlParameterBrush" Color="#FDE68A" />
+    <SolidColorBrush x:Key="JsonPropertyBrush" Color="#67E8F9" />
+    <SolidColorBrush x:Key="JsonLiteralBrush" Color="#FDE68A" />
+    <SolidColorBrush x:Key="JsonPunctuationBrush" Color="#B8B8B8" />
+    <SolidColorBrush x:Key="SyntaxInvalidBrush" Color="#FB7185" />
     <!-- O template nativo do WPF consulta estes recursos dentro dos pop-ups. -->
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#202020" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#F5F5F5" />

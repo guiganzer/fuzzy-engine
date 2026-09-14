@@ -20,6 +20,8 @@
     <PackageReference Include="Npgsql" Version="4.1.14" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="YamlDotNet" Version="13.7.1" />
+    <!-- Editor WPF incremental: preserva seleção/caret e colore apenas ao renderizar. -->
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
   </ItemGroup>
 
   <ItemGroup>
