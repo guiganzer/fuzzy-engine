@@ -116,7 +116,9 @@
                                       VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                                       ScrollViewer.IsDeferredScrollingEnabled="True" ScrollViewer.CanContentScroll="True"
                                       GridLinesVisibility="Horizontal" BorderThickness="0"
-                                      HeadersVisibility="All" ClipboardCopyMode="IncludeHeader" />
+                                      HeadersVisibility="All" ClipboardCopyMode="IncludeHeader"
+                                      PreviewMouseLeftButtonDown="ResultsGrid_PreviewMouseLeftButtonDown"
+                                      PreviewMouseWheel="ResultsGrid_PreviewMouseWheel" />
                         </TabItem>
                         <TabItem Header="JSON">
                             <avalon:TextEditor x:Name="JsonViewer" IsReadOnly="True" Background="{DynamicResource InputBrush}"

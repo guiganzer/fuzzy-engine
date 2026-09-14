@@ -5,6 +5,7 @@ using PostgresCommandExecuter.Editors;
 using PostgresCommandExecuter.Favorites;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
@@ -27,11 +28,13 @@ namespace PostgresCommandExecuter
     public partial class MainWindow : Window
     {
         private readonly DispatcherTimer highlightTimer;
+        private readonly DispatcherTimer connectionPulseTimer;
         private CancellationTokenSource queryCancellation;
         private NpgsqlCommand activeCommand;
         private bool isDarkTheme = true;
         private bool resultsPanelExpanded;
         private bool panelTransitionInProgress;
+        private bool isConnected;
         private readonly FavoriteCatalogStore favoriteStore = new FavoriteCatalogStore();
         private string currentFavoriteId;
         private GridLength savedQueryHeight = new GridLength(1, GridUnitType.Star);
@@ -56,6 +59,9 @@ namespace PostgresCommandExecuter
                 highlightTimer.Stop();
                 RefreshSqlAnalysis();
             };
+
+            connectionPulseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            connectionPulseTimer.Tick += delegate { PulseConnectionIndicator(); };
 
             SetEditorText("SELECT version();\r\n\r\n-- Selecione um trecho ou pressione Ctrl+Enter para executar tudo.\r\nSELECT current_database(), current_user, now();");
             RefreshFavoritesCount();
@@ -317,8 +323,7 @@ namespace PostgresCommandExecuter
                 using (var connection = new NpgsqlConnection(BuildConnectionString()))
                 {
                     await connection.OpenAsync();
-                    ConnectionStatusText.Text = "● Conectado localmente";
-                    ConnectionStatusText.Foreground = (Brush)FindResource("SuccessBrush");
+                    SetConnectionStatus(true);
                     StatusText.Text = "Conexão válida";
                 }
             }
@@ -382,8 +387,7 @@ namespace PostgresCommandExecuter
                 using (var connection = new NpgsqlConnection(BuildConnectionString()))
                 {
                     await connection.OpenAsync(queryCancellation.Token);
-                    ConnectionStatusText.Text = "● Conectado localmente";
-                    ConnectionStatusText.Foreground = (Brush)FindResource("SuccessBrush");
+                    SetConnectionStatus(true);
 
                     using (var command = new NpgsqlCommand(sql, connection))
                     {
@@ -480,6 +484,162 @@ namespace PostgresCommandExecuter
             return value;
         }
 
+        private void ResultsGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount != 2)
+                return;
+
+            var source = e.OriginalSource as DependencyObject;
+            DataGridCell cell = FindParent<DataGridCell>(source);
+            if (cell == null || cell.Column == null)
+                return;
+
+            var rowView = cell.DataContext as DataRowView;
+            string columnName = cell.Column.SortMemberPath;
+            if (string.IsNullOrEmpty(columnName))
+                columnName = cell.Column.Header as string;
+            if (rowView == null || string.IsNullOrEmpty(columnName) || !rowView.Row.Table.Columns.Contains(columnName))
+                return;
+
+            e.Handled = true;
+            object value = rowView.Row[columnName];
+            var dialog = new CellValueWindow(GetEditableCellText(value))
+            {
+                Owner = this,
+                Title = "Valor: " + columnName + "  •  Ctrl+Enter aplica"
+            };
+
+            if (dialog.ShowDialog() != true)
+                return;
+
+            string error;
+            if (!TryApplyCellValue(rowView.Row, columnName, dialog.ValueText, out error))
+            {
+                StatusText.Text = error;
+                return;
+            }
+
+            SetJsonText(SerializeTable(rowView.Row.Table));
+            StatusText.Text = "Valor alterado apenas no resultado atual; o banco não foi atualizado.";
+        }
+
+        private void ResultsGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Shift) != ModifierKeys.Shift)
+                return;
+
+            ScrollViewer scrollViewer = FindVisualChild<ScrollViewer>(ResultsGrid);
+            if (scrollViewer == null || scrollViewer.ScrollableWidth <= 0)
+                return;
+
+            // A roda para baixo avança para as últimas colunas; para cima volta.
+            const double horizontalStep = 88;
+            double direction = e.Delta < 0 ? 1 : -1;
+            double steps = Math.Max(1, Math.Abs(e.Delta) / 120.0);
+            scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset + (direction * horizontalStep * steps));
+            e.Handled = true;
+        }
+
+        private static T FindParent<T>(DependencyObject source) where T : DependencyObject
+        {
+            while (source != null)
+            {
+                var match = source as T;
+                if (match != null)
+                    return match;
+
+                var visual = source as Visual;
+                source = visual != null
+                    ? VisualTreeHelper.GetParent(visual)
+                    : LogicalTreeHelper.GetParent(source);
+            }
+
+            return null;
+        }
+
+        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null)
+                return null;
+
+            int childCount = VisualTreeHelper.GetChildrenCount(parent);
+            for (int index = 0; index < childCount; index++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, index);
+                var match = child as T;
+                if (match != null)
+                    return match;
+
+                T nested = FindVisualChild<T>(child);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
+        }
+
+        private static string GetEditableCellText(object value)
+        {
+            value = PrepareValueForJson(value);
+            if (value == null)
+                return string.Empty;
+
+            var formattable = value as IFormattable;
+            return formattable != null
+                ? formattable.ToString(null, CultureInfo.InvariantCulture)
+                : Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+
+        private static bool TryApplyCellValue(DataRow row, string columnName, string valueText, out string error)
+        {
+            var column = row.Table.Columns[columnName];
+            try
+            {
+                if (string.IsNullOrWhiteSpace(valueText) && column.AllowDBNull)
+                {
+                    row[column] = DBNull.Value;
+                    error = null;
+                    return true;
+                }
+
+                Type targetType = column.DataType;
+                object converted;
+                if (targetType == typeof(string) || targetType == typeof(object))
+                {
+                    converted = valueText;
+                }
+                else if (targetType == typeof(IPAddress))
+                {
+                    converted = IPAddress.Parse(valueText);
+                }
+                else if (targetType == typeof(PhysicalAddress))
+                {
+                    converted = PhysicalAddress.Parse(valueText.Replace(":", string.Empty).Replace("-", string.Empty));
+                }
+                else if (targetType == typeof(byte[]))
+                {
+                    converted = Convert.FromBase64String(valueText);
+                }
+                else
+                {
+                    TypeConverter converter = TypeDescriptor.GetConverter(targetType);
+                    if (converter != null && converter.CanConvertFrom(typeof(string)))
+                        converted = converter.ConvertFrom(null, CultureInfo.InvariantCulture, valueText);
+                    else
+                        converted = Convert.ChangeType(valueText, targetType, CultureInfo.InvariantCulture);
+                }
+
+                row[column] = converted;
+                error = null;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = "Não foi possível aplicar o valor para '" + columnName + "': " + ex.Message;
+                return false;
+            }
+        }
+
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             if (queryCancellation == null)
@@ -506,6 +666,39 @@ namespace PostgresCommandExecuter
             UserTextBox.IsEnabled = !busy;
             PasswordInput.IsEnabled = !busy;
             StatusText.Text = status;
+        }
+
+        private void SetConnectionStatus(bool connected)
+        {
+            isConnected = connected;
+            if (!connected)
+            {
+                connectionPulseTimer.Stop();
+                ConnectionStatusText.BeginAnimation(OpacityProperty, null);
+                ConnectionStatusText.Opacity = 1;
+                ConnectionStatusText.Text = "● Desconectado";
+                ConnectionStatusText.Foreground = (Brush)FindResource("TextSecondaryBrush");
+                return;
+            }
+
+            ConnectionStatusText.Text = "● Conectado localmente";
+            ConnectionStatusText.Foreground = (Brush)FindResource("SuccessBrush");
+            connectionPulseTimer.Start();
+            PulseConnectionIndicator();
+        }
+
+        private void PulseConnectionIndicator()
+        {
+            if (!isConnected)
+                return;
+
+            var easing = new QuadraticEase { EasingMode = EasingMode.EaseInOut };
+            var pulse = new DoubleAnimation(1, 0.42, new Duration(TimeSpan.FromMilliseconds(360)))
+            {
+                AutoReverse = true,
+                EasingFunction = easing
+            };
+            ConnectionStatusText.BeginAnimation(OpacityProperty, pulse);
         }
 
         private void ShowError(Exception ex)
