@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using Npgsql;
 using PostgresCommandExecuter.Editors;
 using PostgresCommandExecuter.Favorites;
+using PostgresCommandExecuter.Results;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -42,6 +43,8 @@ namespace PostgresCommandExecuter
         private GridLength savedResultsHeight = new GridLength(1.15, GridUnitType.Star);
         private readonly TokenColorizer sqlColorizer;
         private readonly TokenColorizer jsonColorizer;
+        private readonly Dictionary<DataGridColumn, ResultColumnPresentation> resultColumnStyles = new Dictionary<DataGridColumn, ResultColumnPresentation>();
+        private ResultBrushPalette resultBrushPalette;
         private const int MaximumLiveAnalysisLength = 350000;
 
         public MainWindow()
@@ -383,6 +386,7 @@ namespace PostgresCommandExecuter
             {
                 SetBusy(true, "Executando...");
                 ResultsGrid.ItemsSource = null;
+                resultColumnStyles.Clear();
                 SetJsonText(string.Empty);
                 ExportCsvButton.IsEnabled = false;
                 ExportJsonButton.IsEnabled = false;
@@ -394,32 +398,24 @@ namespace PostgresCommandExecuter
                     await connection.OpenAsync(queryCancellation.Token);
                     SetConnectionStatus(true);
 
-                    using (var command = new NpgsqlCommand(sql, connection))
-                    {
-                        activeCommand = command;
-                        using (var reader = await command.ExecuteReaderAsync(queryCancellation.Token))
-                        {
-                            var table = await Task.Run(() =>
-                            {
-                                var loadedTable = new DataTable("result");
-                                loadedTable.Load(reader);
-                                return loadedTable;
-                            }, queryCancellation.Token);
-                            string json = await Task.Run(() => SerializeTable(table), queryCancellation.Token);
-                            ResultsGrid.ItemsSource = table.DefaultView;
-                            SetJsonText(json);
-                            ExportCsvButton.IsEnabled = table.Columns.Count > 0;
-                            ExportJsonButton.IsEnabled = !string.IsNullOrWhiteSpace(json);
+                    if (MayChangeTypeCatalog(sql))
+                        PostgreSqlTypeCatalog.Invalidate(connection);
 
-                            stopwatch.Stop();
-                            string message = table.Columns.Count == 0
-                                ? "Comando concluído."
-                                : string.Format(CultureInfo.CurrentCulture, "{0:N0} linha(s), {1:N0} coluna(s).", table.Rows.Count, table.Columns.Count);
-                            MessagesTextBox.Text = message + Environment.NewLine + "Tempo: " + stopwatch.ElapsedMilliseconds + " ms";
-                            StatusText.Text = message + "  " + stopwatch.ElapsedMilliseconds + " ms";
-                            ResultTabs.SelectedIndex = table.Columns.Count > 0 ? 0 : 2;
-                        }
-                    }
+                    ResultTableLoad loaded = await LoadResultTableAsync(connection, sql, queryCancellation.Token);
+                    string json = await Task.Run(() => SerializeTable(loaded.Table), queryCancellation.Token);
+                    ResultsGrid.ItemsSource = loaded.Table.DefaultView;
+                    SetJsonText(json);
+                    ExportCsvButton.IsEnabled = loaded.Table.Columns.Count > 0;
+                    ExportJsonButton.IsEnabled = !string.IsNullOrWhiteSpace(json);
+
+                    stopwatch.Stop();
+                    string message = loaded.Table.Columns.Count == 0
+                        ? "Comando concluído."
+                        : string.Format(CultureInfo.CurrentCulture, "{0:N0} linha(s), {1:N0} coluna(s).", loaded.Table.Rows.Count, loaded.Table.Columns.Count);
+                    MessagesTextBox.Text = message + (string.IsNullOrEmpty(loaded.Warning) ? string.Empty : Environment.NewLine + "Aviso: " + loaded.Warning) +
+                        Environment.NewLine + "Tempo: " + stopwatch.ElapsedMilliseconds + " ms";
+                    StatusText.Text = message + "  " + stopwatch.ElapsedMilliseconds + " ms";
+                    ResultTabs.SelectedIndex = loaded.Table.Columns.Count > 0 ? 0 : 2;
                 }
             }
             catch (OperationCanceledException)
@@ -436,6 +432,15 @@ namespace PostgresCommandExecuter
                     (string.IsNullOrEmpty(ex.Hint) ? "" : Environment.NewLine + "Dica: " + ex.Hint);
                 ResultTabs.SelectedIndex = 2;
             }
+            catch (Exception ex) when (IsLegacyUnknownTypeError(ex))
+            {
+                StatusText.Text = "Tipo PostgreSQL não suportado pelo driver";
+                MessagesTextBox.Text = "O Npgsql 4.1 não reconhece um tipo retornado pelo PostgreSQL 18. " +
+                    "Para preservar a segurança da execução, a consulta não é repetida automaticamente." + Environment.NewLine +
+                    "Converta a coluna incompatível para texto na própria consulta, por exemplo: coluna::text AS coluna." + Environment.NewLine +
+                    "Detalhe: " + ex.Message;
+                ResultTabs.SelectedIndex = 2;
+            }
             catch (Exception ex)
             {
                 ShowError(ex);
@@ -450,6 +455,60 @@ namespace PostgresCommandExecuter
                 }
                 SetBusy(false, StatusText.Text);
             }
+        }
+
+        private sealed class ResultTableLoad
+        {
+            internal DataTable Table;
+            internal string Warning;
+        }
+
+        private async Task<ResultTableLoad> LoadResultTableAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
+        {
+            using (var command = new NpgsqlCommand(sql, connection))
+            {
+                activeCommand = command;
+                using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+                {
+                    PostgreSqlResultMetadata metadata = PostgreSqlResultMetadata.Capture(reader);
+                    var table = await Task.Run(() =>
+                    {
+                        var loadedTable = new DataTable("result");
+                        loadedTable.Load(reader);
+                        return loadedTable;
+                    }, cancellationToken);
+                    reader.Close();
+
+                    string warning = null;
+                    try
+                    {
+                        metadata.Enrich(await PostgreSqlTypeCatalog.GetAsync(connection, cancellationToken));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception catalogException)
+                    {
+                        warning = "Metadados de pg_type indisponíveis: " + catalogException.Message;
+                    }
+                    metadata.ApplyTo(table);
+                    return new ResultTableLoad { Table = table, Warning = warning };
+                }
+            }
+        }
+
+        private static bool IsLegacyUnknownTypeError(Exception ex)
+        {
+            string message = ex == null ? string.Empty : ex.ToString();
+            return message.IndexOf("Couldn't find PostgreSQL type", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   message.IndexOf("unknown PostgreSQL type", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool MayChangeTypeCatalog(string sql)
+        {
+            return Regex.IsMatch(sql ?? string.Empty,
+                @"\b(create|alter|drop)\s+(type|domain|extension)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         private static string SerializeTable(DataTable table)
@@ -593,7 +652,29 @@ namespace PostgresCommandExecuter
             DataColumn column = view == null || !view.Table.Columns.Contains(e.PropertyName)
                 ? null
                 : view.Table.Columns[e.PropertyName];
-            string typeName = GetPostgreSqlTypeName(column == null ? e.PropertyType : column.DataType);
+            string typeName = PostgreSqlResultMetadata.GetDisplayName(column);
+            if (typeName == "desconhecido")
+                typeName = GetPostgreSqlTypeName(column == null ? e.PropertyType : column.DataType);
+            string semanticTypeName = PostgreSqlResultMetadata.GetSemanticTypeName(column);
+            if (string.IsNullOrEmpty(semanticTypeName))
+                semanticTypeName = typeName;
+            string structure = PostgreSqlResultMetadata.GetStructure(column);
+
+            // Booleanos como texto permitem distinguir true, false e NULL pela
+            // mesma paleta semântica da grade, inclusive durante a seleção.
+            if (e.Column is DataGridCheckBoxColumn)
+            {
+                e.Column = new DataGridTextColumn
+                {
+                    SortMemberPath = e.PropertyName,
+                    Binding = new System.Windows.Data.Binding(e.PropertyName) { Converter = ResultValueDisplayConverter.Instance }
+                };
+            }
+
+            var generatedTextColumn = e.Column as DataGridTextColumn;
+            if (generatedTextColumn != null)
+                generatedTextColumn.Binding = new System.Windows.Data.Binding(e.PropertyName) { Converter = ResultValueDisplayConverter.Instance };
+            resultColumnStyles[e.Column] = new ResultColumnPresentation(e.PropertyName, semanticTypeName, structure);
 
             var header = new StackPanel { Orientation = Orientation.Vertical };
             header.Children.Add(new TextBlock
@@ -614,22 +695,40 @@ namespace PostgresCommandExecuter
             header.Children.Add(type);
             e.Column.Header = header;
 
-            var textColumn = e.Column as DataGridTextColumn;
+            ApplyResultColumnStyle(e.Column, resultColumnStyles[e.Column]);
+        }
+
+        private Brush ResolveBrush(string resourceKey)
+        {
+            return TryFindResource(resourceKey) as Brush ?? Brushes.Gray;
+        }
+
+        private void ApplyResultColumnStyle(DataGridColumn column, ResultColumnPresentation styleInfo)
+        {
+            if (resultBrushPalette == null)
+                resultBrushPalette = ResultGridStyleFactory.CreatePalette(ResolveBrush);
+            var textColumn = column as DataGridTextColumn;
             if (textColumn != null)
             {
-                var textStyle = new Style(typeof(TextBlock));
-                textStyle.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
-                textStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(6, 0, 4, 0)));
-                textColumn.ElementStyle = textStyle;
+                textColumn.ElementStyle = ResultGridStyleFactory.CreateTextStyle(
+                    styleInfo, ResolveBrush("TextPrimaryBrush"), resultBrushPalette);
             }
 
-            var checkBoxColumn = e.Column as DataGridCheckBoxColumn;
+            var checkBoxColumn = column as DataGridCheckBoxColumn;
             if (checkBoxColumn != null)
             {
-                var checkBoxStyle = new Style(typeof(CheckBox));
-                checkBoxStyle.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
-                checkBoxStyle.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center));
-                checkBoxColumn.ElementStyle = checkBoxStyle;
+                checkBoxColumn.ElementStyle = ResultGridStyleFactory.CreateCheckBoxStyle(
+                    ResolveBrush("GridBooleanTrueValueBrush"), ResolveBrush("TextPrimaryBrush"));
+            }
+        }
+
+        private void RefreshResultColumnStyles()
+        {
+            resultBrushPalette = ResultGridStyleFactory.CreatePalette(ResolveBrush);
+            foreach (var item in resultColumnStyles.ToList())
+            {
+                if (ResultsGrid.Columns.Contains(item.Key))
+                    ApplyResultColumnStyle(item.Key, item.Value);
             }
         }
 
@@ -692,7 +791,12 @@ namespace PostgresCommandExecuter
 
             e.Handled = true;
             object value = rowView.Row[columnName];
-            var dialog = new CellValueWindow(GetEditableCellText(value))
+            DataColumn resultColumn = rowView.Row.Table.Columns[columnName];
+            var dialog = new CellValueWindow(GetEditableCellText(value), new CellValueMetadata(
+                columnName,
+                PostgreSqlResultMetadata.GetDisplayName(resultColumn),
+                PostgreSqlResultMetadata.GetSemanticTypeName(resultColumn),
+                PostgreSqlResultMetadata.GetStructure(resultColumn)))
             {
                 Owner = this,
                 Title = "Valor: " + columnName + "  •  Ctrl+Enter aplica"
@@ -1205,6 +1309,7 @@ namespace PostgresCommandExecuter
             isDarkTheme = dark;
             ThemeButton.Content = dark ? "☀ Tema claro" : "☾ Tema escuro";
             ApplySyntaxTheme();
+            RefreshResultColumnStyles();
             RefreshSqlAnalysis();
             RefreshJsonAnalysis();
         }

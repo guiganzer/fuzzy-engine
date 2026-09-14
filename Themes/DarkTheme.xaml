@@ -29,6 +29,31 @@
     <SolidColorBrush x:Key="JsonLiteralBrush" Color="#FDE68A" />
     <SolidColorBrush x:Key="JsonPunctuationBrush" Color="#B8B8B8" />
     <SolidColorBrush x:Key="SyntaxInvalidBrush" Color="#FB7185" />
+    <!-- Valores tabulares: paleta semântica independente da sintaxe SQL/JSON. -->
+    <SolidColorBrush x:Key="GridNullValueBrush" Color="#8E8E8E" />
+    <SolidColorBrush x:Key="GridBooleanTrueValueBrush" Color="#8BD5A6" />
+    <SolidColorBrush x:Key="GridBooleanFalseValueBrush" Color="#F28FAD" />
+    <SolidColorBrush x:Key="GridIntegerValueBrush" Color="#F6C177" />
+    <SolidColorBrush x:Key="GridPositiveNumberValueBrush" Color="#F6C177" />
+    <SolidColorBrush x:Key="GridNegativeNumberValueBrush" Color="#F28FAD" />
+    <SolidColorBrush x:Key="GridZeroNumberValueBrush" Color="#B9C2CC" />
+    <SolidColorBrush x:Key="GridNonFiniteNumberValueBrush" Color="#F0D48A" />
+    <SolidColorBrush x:Key="GridMoneyValueBrush" Color="#F0D48A" />
+    <SolidColorBrush x:Key="GridTextValueBrush" Color="#E0DEF4" />
+    <SolidColorBrush x:Key="GridUuidValueBrush" Color="#9CCFD8" />
+    <SolidColorBrush x:Key="GridTemporalValueBrush" Color="#C4A7E7" />
+    <SolidColorBrush x:Key="GridBinaryValueBrush" Color="#A0AEC0" />
+    <SolidColorBrush x:Key="GridJsonValueBrush" Color="#5FD7D7" />
+    <SolidColorBrush x:Key="GridXmlValueBrush" Color="#D6B67A" />
+    <SolidColorBrush x:Key="GridNetworkValueBrush" Color="#77C8D6" />
+    <SolidColorBrush x:Key="GridGeometricValueBrush" Color="#EFA8B8" />
+    <SolidColorBrush x:Key="GridFullTextValueBrush" Color="#D9B3FF" />
+    <SolidColorBrush x:Key="GridCollectionValueBrush" Color="#86BBD8" />
+    <SolidColorBrush x:Key="GridRangeValueBrush" Color="#C7D48B" />
+    <SolidColorBrush x:Key="GridEnumValueBrush" Color="#E0DEF4" />
+    <SolidColorBrush x:Key="GridCompositeValueBrush" Color="#D2A679" />
+    <SolidColorBrush x:Key="GridCustomValueBrush" Color="#CBD5E1" />
+    <SolidColorBrush x:Key="GridUnknownValueBrush" Color="#CBD5E1" />
     <!-- O template nativo do WPF consulta estes recursos dentro dos pop-ups. -->
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#202020" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#F5F5F5" />

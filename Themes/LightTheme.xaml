@@ -28,6 +28,31 @@
     <SolidColorBrush x:Key="JsonLiteralBrush" Color="#A16207" />
     <SolidColorBrush x:Key="JsonPunctuationBrush" Color="#526174" />
     <SolidColorBrush x:Key="SyntaxInvalidBrush" Color="#BE123C" />
+    <!-- Valores tabulares: paleta semântica independente da sintaxe SQL/JSON. -->
+    <SolidColorBrush x:Key="GridNullValueBrush" Color="#64748B" />
+    <SolidColorBrush x:Key="GridBooleanTrueValueBrush" Color="#15803D" />
+    <SolidColorBrush x:Key="GridBooleanFalseValueBrush" Color="#BE123C" />
+    <SolidColorBrush x:Key="GridIntegerValueBrush" Color="#9A3412" />
+    <SolidColorBrush x:Key="GridPositiveNumberValueBrush" Color="#7C2D12" />
+    <SolidColorBrush x:Key="GridNegativeNumberValueBrush" Color="#BE123C" />
+    <SolidColorBrush x:Key="GridZeroNumberValueBrush" Color="#475569" />
+    <SolidColorBrush x:Key="GridNonFiniteNumberValueBrush" Color="#A16207" />
+    <SolidColorBrush x:Key="GridMoneyValueBrush" Color="#A16207" />
+    <SolidColorBrush x:Key="GridTextValueBrush" Color="#334155" />
+    <SolidColorBrush x:Key="GridUuidValueBrush" Color="#0369A1" />
+    <SolidColorBrush x:Key="GridTemporalValueBrush" Color="#6D28D9" />
+    <SolidColorBrush x:Key="GridBinaryValueBrush" Color="#475569" />
+    <SolidColorBrush x:Key="GridJsonValueBrush" Color="#0F766E" />
+    <SolidColorBrush x:Key="GridXmlValueBrush" Color="#92400E" />
+    <SolidColorBrush x:Key="GridNetworkValueBrush" Color="#0E7490" />
+    <SolidColorBrush x:Key="GridGeometricValueBrush" Color="#BE185D" />
+    <SolidColorBrush x:Key="GridFullTextValueBrush" Color="#7E22CE" />
+    <SolidColorBrush x:Key="GridCollectionValueBrush" Color="#1D4ED8" />
+    <SolidColorBrush x:Key="GridRangeValueBrush" Color="#4D7C0F" />
+    <SolidColorBrush x:Key="GridEnumValueBrush" Color="#7C3AED" />
+    <SolidColorBrush x:Key="GridCompositeValueBrush" Color="#A16207" />
+    <SolidColorBrush x:Key="GridCustomValueBrush" Color="#475569" />
+    <SolidColorBrush x:Key="GridUnknownValueBrush" Color="#475569" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FFFFFF" />
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#172033" />
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E2E8F0" />

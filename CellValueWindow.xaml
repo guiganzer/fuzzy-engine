@@ -1,22 +1,48 @@
 <Window x:Class="PostgresCommandExecuter.CellValueWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
         Title="Valor da célula" Width="720" Height="460" MinWidth="360" MinHeight="240"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
         Background="{DynamicResource WindowBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
         Icon="Assets/sql-executor-icon.png"
-        Loaded="Window_Loaded" PreviewKeyDown="Window_PreviewKeyDown">
+        Loaded="Window_Loaded" Closed="Window_Closed" PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
-        <TextBox x:Name="CellValueTextBox"
-                 Margin="12"
-                 AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                 FontFamily="Consolas" FontSize="13" Padding="10"
-                 ToolTip="Ctrl+C copia a seleção. Ctrl+Enter aplica a alteração." />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <Button x:Name="ToggleWorkspaceButton" Content="↗" Width="28" Height="28"
+        <Border Grid.Row="0" Margin="12,12,12,0" Padding="12,9"
+                Background="{DynamicResource SurfaceRaisedBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+            <DockPanel LastChildFill="True">
+                <TextBlock x:Name="PresentationStatusText" DockPanel.Dock="Right" Margin="16,0,0,0"
+                           VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel>
+                    <TextBlock x:Name="ColumnNameText" FontWeight="SemiBold" FontSize="14"
+                               Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TypeMetadataText" Margin="0,2,0,0" FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1" Margin="12" Background="{DynamicResource InputBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+            <avalon:TextEditor x:Name="CellValueEditor"
+                               Background="{DynamicResource InputBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+                               BorderThickness="0" FontFamily="Consolas" FontSize="13" ShowLineNumbers="True"
+                               WordWrap="False" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                               TextChanged="CellValueEditor_TextChanged"
+                               ToolTip="Ctrl+C copia a seleção. Ctrl+Enter aplica a alteração." />
+        </Border>
+
+        <Button x:Name="ToggleWorkspaceButton" Grid.Row="1" Content="↗" Width="28" Height="28"
                 HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,14"
                 Padding="0" FontSize="14" FontWeight="SemiBold"
+                Panel.ZIndex="3"
                 ToolTip="Ocupar a área útil da tela"
                 Click="ToggleWorkspace_Click" />
     </Grid>

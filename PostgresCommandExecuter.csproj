@@ -5,9 +5,9 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>PostgresCommandExecuter</AssemblyName>
     <RootNamespace>PostgresCommandExecuter</RootNamespace>
-    <Version>0.2.0</Version>
-    <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.2.0.0</FileVersion>
+    <Version>0.0.4</Version>
+    <AssemblyVersion>0.0.4.0</AssemblyVersion>
+    <FileVersion>0.0.4.0</FileVersion>
     <Product>PostgreSQL Command Executer</Product>
     <Company>PostgreSQL Command Executer</Company>
     <LangVersion>7.3</LangVersion>
@@ -27,5 +27,6 @@
   <ItemGroup>
     <None Remove="Assets\sql-executor-icon.png" />
     <Resource Include="Assets\sql-executor-icon.png" />
+    <Compile Remove="tests\**\*.cs" />
   </ItemGroup>
 </Project>
